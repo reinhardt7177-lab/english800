@@ -32,12 +32,16 @@ export const db = {
     if (isFirebaseConfigured) {
       try {
         const docRef = doc(dbFirestore, "users", user.username);
-        const docSnap = await getDoc(docRef);
+        // 안전장치: 데이터베이스가 미생성된 상태에서 무한 로딩되는 것을 막기 위한 3초 타임아웃
+        const docSnap = await Promise.race([
+          getDoc(docRef),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase Timeout")), 3000))
+        ]);
         if (docSnap.exists()) {
           dataToReturn = docSnap.data();
         }
       } catch (err) {
-        console.error("Firebase Load Error:", err);
+        console.error("Firebase Load Error (Database might not exist yet):", err);
       }
     } 
     // 2. 파이어베이스 연결이 없다면 로컬 스토리지에서 불러옵니다.
