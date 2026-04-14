@@ -5,10 +5,48 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 const USER_KEY = 'ghibli_user';
 
 export const auth = {
-  login: (username, password) => {
-    // Simple mock login / identifier
-    localStorage.setItem(USER_KEY, JSON.stringify({ username, id: `user_${username}` }));
-    return Promise.resolve({ username });
+  login: async (username, pin) => {
+    const trimmedUser = username.trim();
+    if (!trimmedUser || !pin) throw new Error("이름과 마법의 숫자(PIN)를 모두 입력하세요!");
+
+    const userObj = { username: trimmedUser, id: `user_${trimmedUser}` };
+
+    if (isFirebaseConfigured) {
+      try {
+        const docRef = doc(dbFirestore, "users", trimmedUser);
+        const docSnap = await Promise.race([
+          getDoc(docRef),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 3000))
+        ]);
+
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.pin && data.pin !== pin) {
+            throw new Error("마법의 숫자(비밀번호)가 틀렸습니다!");
+          }
+        } else {
+          // 신규 가입자 PIN 부여 및 문서를 미리 생성!
+          await setDoc(docRef, { pin: pin });
+        }
+      } catch (err) {
+        if (err.message === "마법의 숫자(비밀번호)가 틀렸습니다!") throw err;
+        console.error("Firebase Login Error:", err);
+      }
+    } else {
+      const PROGRESS_KEY = `ghibli_progress_${trimmedUser}`;
+      const progress = localStorage.getItem(PROGRESS_KEY);
+      if (progress) {
+        const parsed = JSON.parse(progress);
+        if (parsed.pin && parsed.pin !== pin) {
+          throw new Error("마법의 숫자(비밀번호)가 틀렸습니다!");
+        }
+      } else {
+        localStorage.setItem(PROGRESS_KEY, JSON.stringify({ pin: pin }));
+      }
+    }
+
+    localStorage.setItem(USER_KEY, JSON.stringify(userObj));
+    return userObj;
   },
   logout: () => {
     localStorage.removeItem(USER_KEY);
@@ -55,6 +93,9 @@ export const db = {
     if (dataToReturn) {
       if (dataToReturn.score === undefined) dataToReturn.score = 0;
       if (!dataToReturn.playedDays) dataToReturn.playedDays = [];
+      if (!dataToReturn.completedWords) dataToReturn.completedWords = [];
+      if (!dataToReturn.wrongWordsQueue) dataToReturn.wrongWordsQueue = [];
+      if (!dataToReturn.day) dataToReturn.day = 1;
       return dataToReturn;
     }
 
